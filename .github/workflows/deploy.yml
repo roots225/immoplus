@@ -73,6 +73,4 @@ jobs:
             EOF
             
             docker compose down
-            docker compose up -d --build
-            # docker compose exec api bun run migration:run
-            # docker compose exec api bun run seed
+            docker compose --env-file .env up -d --build
