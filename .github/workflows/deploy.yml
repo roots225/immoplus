@@ -1,0 +1,78 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'development' }}
+
+    steps:
+      - name: 📥 Checkout du code
+        uses: actions/checkout@v4
+
+      - name: 🔑 Configuration de la clé SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: 🌐 Ajouter le serveur aux Known Hosts
+        run: |
+          mkdir -p ~/.ssh/
+          ssh-keyscan -H -p ${{ secrets.VPS_PORT }} ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: 🚀 Déploiement vers le VPS avec rsync updated
+        run: |
+          rsync -avz --delete \
+            -e "ssh -p ${{ secrets.VPS_PORT }}" \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='__pycache__/' \
+            --exclude='venv/' \
+            ./ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ secrets.VPS_TARGET_DIR }}
+
+      - name: 🔄 Redémarrage de l'application (Docker Compose)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          port: ${{ secrets.VPS_PORT }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          # Exécute des commandes sur le VPS après le rsync
+          script: |
+            cd ${{ secrets.VPS_TARGET_DIR }}
+
+            cat << 'EOF' > .env
+            # Cartes Mapbox
+            NEXT_PUBLIC_MAPBOX_TOKEN=${{ vars.NEXT_PUBLIC_MAPBOX_TOKEN }}
+            MAPBOX_SECRET_TOKEN=${{ vars.MAPBOX_SECRET_TOKEN }}
+
+            # APIs françaises (gratuites)
+            DVF_API_URL="https://api.data.gouv.fr/api/dvf/v1"
+            BAN_API_URL="https://api-adresse.data.gouv.fr"
+            ADEME_API_URL="https://data.ademe.fr/data-fair/api/v1/datasets"
+            GEORISQUES_API_KEY=${{ vars.GEORISQUES_API_KEY }}
+            INSEE_API_KEY=${{ vars.INSEE_API_KEY }}
+
+            # Annonces (payant — programme startup)
+            STREAM_ESTATE_API_KEY=${{ vars.STREAM_ESTATE_API_KEY }}
+
+            # Monitoring
+            NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
+            NEXT_PUBLIC_POSTHOG_KEY=${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
+
+            # App
+            NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL }}
+
+            NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ vars.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+            CLERK_SECRET_KEY="${{ vars.CLERK_SECRET_KEY }}"
+            EOF
+            
+            docker compose down
+            docker compose up -d --build
+            # docker compose exec api bun run migration:run
+            # docker compose exec api bun run seed
