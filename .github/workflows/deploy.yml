@@ -46,7 +46,7 @@ jobs:
           script: |
             cd ${{ secrets.VPS_TARGET_DIR }}
 
-            cat << 'EOF' > .env
+            cat << 'EOF' > .env.local
             # Cartes Mapbox
             NEXT_PUBLIC_MAPBOX_TOKEN=${{ vars.NEXT_PUBLIC_MAPBOX_TOKEN }}
             MAPBOX_SECRET_TOKEN=${{ vars.MAPBOX_SECRET_TOKEN }}
@@ -73,4 +73,4 @@ jobs:
             EOF
             
             docker compose down
-            docker compose --env-file .env up -d --build
+            docker compose --env-file .env.local up -d --build
