@@ -47,6 +47,14 @@ jobs:
             cd ${{ secrets.VPS_TARGET_DIR }}
 
             cat << 'EOF' > .env.local
+            DATABASE_URL="postgresql://immoplatform:immoplatform@localhost:5432/immoplatform?schema=public"
+            DIRECT_URL="postgresql://immoplatform:immoplatform@localhost:5432/immoplatform?schema=public"
+
+            # Cache Redis (Upstash en prod — URL rediss://, service redis en Docker local)
+            REDIS_URL="redis://localhost:6379"
+            UPSTASH_REDIS_REST_URL=""
+            UPSTASH_REDIS_REST_TOKEN=""
+
             # Cartes Mapbox
             NEXT_PUBLIC_MAPBOX_TOKEN=${{ vars.NEXT_PUBLIC_MAPBOX_TOKEN }}
             MAPBOX_SECRET_TOKEN=${{ vars.MAPBOX_SECRET_TOKEN }}
@@ -57,6 +65,13 @@ jobs:
             ADEME_API_URL="https://data.ademe.fr/data-fair/api/v1/datasets"
             GEORISQUES_API_KEY=${{ vars.GEORISQUES_API_KEY }}
             INSEE_API_KEY=${{ vars.INSEE_API_KEY }}
+
+            # Stockage Cloudflare R2
+            CLOUDFLARE_R2_ENDPOINT=""
+            CLOUDFLARE_R2_ACCESS_KEY_ID=""
+            CLOUDFLARE_R2_SECRET_ACCESS_KEY=""
+            CLOUDFLARE_R2_BUCKET_NAME="immoplatform"
+            NEXT_PUBLIC_R2_PUBLIC_URL=""
 
             # Annonces (payant — programme startup)
             STREAM_ESTATE_API_KEY=${{ vars.STREAM_ESTATE_API_KEY }}

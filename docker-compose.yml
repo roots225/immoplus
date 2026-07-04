@@ -8,7 +8,12 @@
 # Usage :
 #   cp .env.example .env.local   # remplir les clés (Clerk, Anthropic, Stripe…)
 #   docker compose --env-file .env.local up --build
-#   docker compose exec app bunx prisma migrate deploy   # 1er lancement
+#
+# Migrations : le service one-shot `migrate` exécute `prisma migrate deploy`
+# automatiquement avant app et workers. Le CLI Prisma n'existe PAS dans
+# l'image `app` (build Next.js standalone = node_modules élagué) — pour une
+# commande Prisma manuelle, passer par l'image workers :
+#   docker compose run --rm migrate bunx prisma db push
 #
 # NB : --env-file .env.local est requis pour transmettre la clé publique
 # Clerk au build (les variables NEXT_PUBLIC_* sont inlinées au build Next.js).
@@ -46,7 +51,28 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
+
+  # One-shot : applique les migrations Prisma puis s'arrête.
+  # Basé sur l'image workers (node_modules complet, CLI Prisma inclus).
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    command: ["bunx", "prisma", "migrate", "deploy"]
+    env_file:
+      - .env.local
+    environment:
+      DATABASE_URL: postgresql://immoplatform:immoplatform@postgres:5432/immoplatform?schema=public
+      DIRECT_URL: postgresql://immoplatform:immoplatform@postgres:5432/immoplatform?schema=public
+    networks:
+      - immoplatform
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
 
   workers:
     build:
@@ -65,6 +91,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   postgres:
