@@ -1,0 +1,107 @@
+# ============================================================
+# ImmoPlatform — Stack Docker complète (développement / staging)
+#   app      : Next.js 15 (frontend + API Routes)   → :3000
+#   workers  : BullMQ (analyse + alertes)
+#   postgres : PostgreSQL 16 (remplace Supabase en local)
+#   redis    : Redis 7 (remplace Upstash en local)
+#
+# Usage :
+#   cp .env.example .env.local   # remplir les clés (Clerk, Anthropic, Stripe…)
+#   docker compose --env-file .env.local up --build
+#   docker compose exec app bunx prisma migrate deploy   # 1er lancement
+#
+# NB : --env-file .env.local est requis pour transmettre la clé publique
+# Clerk au build (les variables NEXT_PUBLIC_* sont inlinées au build Next.js).
+# Sans clé, le build aboutit avec un placeholder mais l'auth sera inopérante.
+#
+# Réseau : tous les services partagent le réseau interne "immoplatform".
+# Seul `app` publie un port sur l'hôte (:3000) — postgres et redis ne sont
+# joignables que depuis les conteneurs. Pour y accéder ponctuellement :
+#   docker compose exec postgres psql -U immoplatform immoplatform
+#   docker compose exec redis redis-cli
+# ============================================================
+
+name: immoplatform
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    environment:
+      DATABASE_URL: postgresql://immoplatform:immoplatform@postgres:5432/immoplatform?schema=public
+      DIRECT_URL: postgresql://immoplatform:immoplatform@postgres:5432/immoplatform?schema=public
+      REDIS_URL: redis://redis:6379
+    networks:
+      - immoplatform
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  workers:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    env_file:
+      - .env.local
+    environment:
+      DATABASE_URL: postgresql://immoplatform:immoplatform@postgres:5432/immoplatform?schema=public
+      DIRECT_URL: postgresql://immoplatform:immoplatform@postgres:5432/immoplatform?schema=public
+      REDIS_URL: redis://redis:6379
+    networks:
+      - immoplatform
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: immoplatform
+      POSTGRES_PASSWORD: immoplatform
+      POSTGRES_DB: immoplatform
+    # Pas de ports: publiés — joignable uniquement via le réseau interne
+    networks:
+      - immoplatform
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U immoplatform -d immoplatform"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 256mb --maxmemory-policy noeviction
+    # Pas de ports: publiés — joignable uniquement via le réseau interne
+    networks:
+      - immoplatform
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+networks:
+  immoplatform:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
